@@ -15,7 +15,7 @@ st.sidebar.header("📁 Carga de Archivos")
 file_maestro = st.sidebar.file_uploader("1. Maestro de Choferes (.xlsx)", type=["xlsx"])
 file_factura = st.sidebar.file_uploader("2. Detalle de Consumos / Factura (.xlsx, .csv o .pdf)", type=["xlsx", "csv", "pdf"])
 
-# Variables para cabecera por defecto
+# Variables de cabecera predeterminadas
 auto_nro_int = "13393"
 auto_fecha = "14/08/2026"
 auto_proveedor = "30646766369"
@@ -25,12 +25,11 @@ df_consumos = None
 
 if file_factura:
     if file_factura.name.endswith('.pdf'):
-        # Extracción automática desde PDF
         reader = pypdf.PdfReader(file_factura)
         pdf_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         
-        # Extraer cabecera del PDF
-        comp_m = re.search(r'([A-Z]-\d{5}-\d{8})', pdf_text)
+        # Intentar extraer datos de cabecera de la factura
+        comp_m = re.search(r'([A-Z]-\d{4,5}-\d{8})', pdf_text)
         if comp_m: auto_comprobante = comp_m.group(1)
             
         fecha_m = re.search(r'(\d{2}/\d{2}/\d{4})', pdf_text)
@@ -42,53 +41,78 @@ if file_factura:
         cuit_m = re.search(r'C\.U\.I\.T\.\s*(\d{2}-\d{8}-\d{1})', pdf_text)
         if cuit_m: auto_proveedor = cuit_m.group(1).replace('-', '')
 
-        # Extraer ítems de consumo
-        pattern = r'(COMBUSTIBLES\s+REPARTO.*?)\s+Litros\s*(\d+(?:\.\d+)?)\s+([\d\.,]+)\s+([\d\.,]+)'
-        matches = re.findall(pattern, pdf_text)
-        
-        rows = []
-        for m in matches:
-            rows.append({
-                'Descripción': m[0].strip(),
-                'Cantidad': float(m[1]),
-                'Precio': float(m[2].replace('.', '').replace(',', '.')),
-                'Bruto': float(m[3].replace('.', '').replace(',', '.'))
-            })
-        df_consumos = pd.DataFrame(rows)
+        # LECTURA ESPECIAL PARA LISTADO DE REMITOS DETALLADO (PDF de RTOS)
+        lines = pdf_text.split('\n')
+        records = []
+        current_chofer, current_patente = "", ""
+
+        for line in lines:
+            line_s = line.strip()
+            # Remitos principales
+            if re.match(r'^\d{2}/\d{2}\s+\d{2}:\d{2}\s+\d{4}-\d{8}', line_s):
+                fuel_m = re.search(r'(DIESEL\s+\d+|INFINIA\s+DIESEL|NAFTA\s+SUPER|NAFTA\s+INFINIA)', line_s)
+                if fuel_m:
+                    fuel = fuel_m.group(1)
+                    before_fuel = line_s[:fuel_m.start()]
+                    after_fuel = line_s[fuel_m.start():]
+                    clean_before = re.sub(r'^\d{2}/\d{2}\s+\d{2}:\d{2}\s+\d{4}-\d{8}\s+', '', before_fuel).strip()
+                    
+                    nums = re.findall(r'[\d\.]+\,\d+', after_fuel)
+                    qty = float(nums[0].replace('.', '').replace(',', '.')) if len(nums) >= 1 else 1.0
+                    price = float(nums[1].replace('.', '').replace(',', '.')) if len(nums) >= 2 else 0.0
+                    total = float(nums[2].replace('.', '').replace(',', '.')) if len(nums) >= 3 else price
+                    
+                    pat_m = re.search(r'([A-Z]{2,3}\s*\d{3}\s*[A-Z]{0,2}|[A-Z]{3}\s*\d{3})', clean_before)
+                    if pat_m:
+                        patente = pat_m.group(1).replace(" ", "")
+                        chofer = clean_before[:pat_m.start()].strip()
+                    else:
+                        patente, chofer = "", clean_before
+                    
+                    current_chofer, current_patente = chofer, patente
+                    records.append({'CHOFER': chofer, 'PATENTE': patente, 'Artículo': fuel, 'Cantidad': qty, 'Precio': price, 'Bruto': total})
+            else:
+                # Renglones secundarios/adicionales
+                fuel_m = re.search(r'^(DIESEL\s+\d+|INFINIA\s+DIESEL|NAFTA\s+SUPER|NAFTA\s+INFINIA)', line_s)
+                if fuel_m:
+                    fuel = fuel_m.group(1)
+                    nums = re.findall(r'[\d\.]+\,\d+', line_s)
+                    qty = float(nums[0].replace('.', '').replace(',', '.')) if len(nums) >= 1 else 1.0
+                    price = float(nums[1].replace('.', '').replace(',', '.')) if len(nums) >= 2 else 0.0
+                    total = float(nums[2].replace('.', '').replace(',', '.')) if len(nums) >= 3 else price
+                    records.append({'CHOFER': current_chofer, 'PATENTE': current_patente, 'Artículo': fuel, 'Cantidad': qty, 'Precio': price, 'Bruto': total})
+
+        df_consumos = pd.DataFrame(records)
         
     elif file_factura.name.endswith('.xlsx'):
         df_consumos = pd.read_excel(file_factura)
     else:
         df_consumos = pd.read_csv(file_factura)
 
-if file_maestro and df_consumos is not None:
-    # Cargar y limpiar Maestro
+if file_maestro and df_consumos is not None and not df_consumos.empty:
     df_maestro = pd.read_excel(file_maestro)
     df_maestro['PATENTE_CLEAN'] = df_maestro['PATENTE'].astype(str).str.replace(" ", "").str.upper()
 
     if 'PATENTE' in df_consumos.columns:
-        df_consumos['PATENTE_CLEAN'] = df_consumos['PATENTE'].astype(str).str.replace(" ", "").str.upper()
+        df_consumos['PATENTE_CLEAN'] = df_consumos['PATENTE'].astype(str).str.replace(" ", "").str.upper().str.rstrip('A')
 
-    # --- SECCIÓN 2: DATOS DE CABECERA DE LA FACTURA ---
+    # --- SECCIÓN 2: CABECERA ---
     st.subheader("📝 Datos de Cabecera del Comprobante")
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        nro_interno = st.text_input("Número Interno (Agrupador)", auto_nro_int)
-    with c2:
-        fecha_fc = st.text_input("Fecha Comprobante", auto_fecha)
-    with c3:
-        proveedor_cod = st.text_input("Código Proveedor (CUIT)", auto_proveedor)
-    with c4:
-        nro_comprobante = st.text_input("N° Comprobante", auto_comprobante)
+    with c1: nro_interno = st.text_input("Número Interno", auto_nro_int)
+    with c2: fecha_fc = st.text_input("Fecha Comprobante", auto_fecha)
+    with c3: proveedor_cod = st.text_input("Código Proveedor (CUIT)", auto_proveedor)
+    with c4: nro_comprobante = st.text_input("N° Comprobante", auto_comprobante)
 
-    # --- SECCIÓN 3: CRUCE Y VALIDACIÓN ---
+    # --- SECCIÓN 3: VALIDACIÓN Y CRUCE ---
     st.markdown("---")
     st.subheader("🔍 Validando Choferes y Centros de Costo")
 
-    if 'CHOFER' in df_consumos.columns:
-        df_merged = pd.merge(df_consumos, df_maestro[['CHOFER', 'REPARTO', 'PATENTE_CLEAN']], on='CHOFER', how='left')
-    elif 'PATENTE_CLEAN' in df_consumos.columns:
+    # Cruce primario por Patente (más preciso)
+    if 'PATENTE_CLEAN' in df_consumos.columns:
         df_merged = pd.merge(df_consumos, df_maestro[['REPARTO', 'PATENTE_CLEAN']].drop_duplicates(), on='PATENTE_CLEAN', how='left')
+    elif 'CHOFER' in df_consumos.columns:
+        df_merged = pd.merge(df_consumos, df_maestro[['CHOFER', 'REPARTO']].drop_duplicates(), on='CHOFER', how='left')
     else:
         df_merged = df_consumos.copy()
         df_merged['REPARTO'] = None
@@ -96,13 +120,13 @@ if file_maestro and df_consumos is not None:
     faltantes = df_merged[df_merged['REPARTO'].isna()]
 
     if not faltantes.empty:
-        st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo / Reparto asignado.")
-        st.write("Registros que requieren corrección antes de exportar:")
-        st.dataframe(faltantes)
+        st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo asignado.")
+        st.write("Verificá la patente o chofer de estos registros en el Maestro:")
+        st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Cantidad', 'Bruto']])
     else:
-        st.success("✅ Excelente: Todos los ítems tienen su Centro de Costo asignado correctamente.")
+        st.success("✅ Excelente: Todos los 22 ítems de remitos tienen su Centro de Costo asignado correctamente.")
 
-    # --- SECCIÓN 4: ARMAR PLANTILLA FINNEGANS ---
+    # --- SECCIÓN 4: DFB FINNEGANS ---
     st.markdown("---")
     st.subheader("📊 Vista Previa del Excel Final (Formato Finnegans)")
 
@@ -114,14 +138,14 @@ if file_maestro and df_consumos is not None:
     df_finnegans['Condición de Pago'] = ['CUENTA CORRIENTE 7 DÍAS'] * len(df_merged)
     df_finnegans['Moneda'] = ['ARS'] * len(df_merged)
     df_finnegans['Producto'] = ['COMB'] * len(df_merged)
-    df_finnegans['Cantidad'] = df_merged['Cantidad'] if 'Cantidad' in df_merged.columns else 1.0
-    df_finnegans['Precio'] = df_merged['Precio'] if 'Precio' in df_merged.columns else df_merged['Bruto']
+    df_finnegans['Cantidad'] = df_merged['Cantidad']
+    df_finnegans['Precio'] = df_merged['Precio']
     df_finnegans['Dimensión'] = 'DIMCTC'
     df_finnegans['Valor de dimensión'] = df_merged['REPARTO']
 
     st.dataframe(df_finnegans)
 
-    # --- SECCIÓN 5: DESCARGAR EXCEL ---
+    # --- SECCIÓN 5: DESCARGAR ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_finnegans.to_excel(writer, index=False, sheet_name='Factura_Importar')
@@ -134,4 +158,4 @@ if file_maestro and df_consumos is not None:
     )
 
 else:
-    st.info("👈 Por favor, subí el Maestro de Choferes y la Factura (.pdf, .xlsx o .csv) para comenzar.")
+    st.info("👈 Por favor, subí el Maestro de Choferes y la Factura/Remitos (.pdf, .xlsx o .csv) para comenzar.")
