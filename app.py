@@ -16,12 +16,21 @@ file_maestro = st.sidebar.file_uploader("1. Maestro de Choferes (.xlsx)", type=[
 file_factura = st.sidebar.file_uploader("2. Factura A - Petroeste (.pdf)", type=["pdf"])
 file_remitos = st.sidebar.file_uploader("3. Listado de Remitos (.pdf, .xlsx, .csv)", type=["pdf", "xlsx", "csv"])
 
-# Precios Unitarios de Factura por defecto (extraídos de la Factura A)
-precios_factura = {
+# Precios Unitarios NETOS de la Factura (ejemplo Petroeste)
+precios_unitarios_factura = {
     'DIESEL 500': 2235.00,
     'INFINIA DIESEL': 2604.00,
     'NAFTA SUPER': 1829.00,
     'NAFTA INFINIA': 2072.00
+}
+
+# Impuestos extraídos de la Factura Petroeste A-00098-00040851
+impuestos_factura = {
+    'ITC': 307583.78,
+    'Impuestos Provinciales': 69423.40,
+    'Impuestos Municipales': 176904.25,
+    'IVA_21': 832300.19,
+    'Percepciones': 553911.43
 }
 
 auto_nro_int = "13393"
@@ -29,7 +38,7 @@ auto_fecha = "14/08/2026"
 auto_proveedor = "30646766369"
 auto_comprobante = "A-00098-00040851"
 
-# 1. Leer Precios y Cabecera de Factura A
+# 1. Leer Datos de Factura A
 if file_factura:
     reader_fc = pypdf.PdfReader(file_factura)
     txt_fc = "\n".join([page.extract_text() for page in reader_fc.pages if page.extract_text()])
@@ -106,15 +115,15 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c3: proveedor_cod = st.text_input("Código Proveedor (CUIT)", auto_proveedor)
     with c4: nro_comprobante = st.text_input("N° Comprobante", auto_comprobante)
 
-    # --- SECCIÓN 3: VALIDACIÓN Y ASIGNACIÓN DE PRECIOS FACTURA ---
+    # --- SECCIÓN 3: VALIDACIÓN DE PRECIOS Y CENTROS DE COSTO ---
     st.markdown("---")
-    st.subheader("🔍 Validando Choferes, Precios de Factura y Centros de Costo")
+    st.subheader("🔍 Validando Choferes, Precios Unitarios y Centros de Costo")
 
-    # Aplicar Precios de Factura según el combustible
-    df_consumos['Precio_Factura'] = df_consumos['Artículo'].map(precios_factura).fillna(1.0)
-    df_consumos['Importe_Total'] = df_consumos['Litros'] * df_consumos['Precio_Factura']
+    # Precio Unitario Neto
+    df_consumos['Precio_Unitario_Neto'] = df_consumos['Artículo'].map(precios_unitarios_factura).fillna(1.0)
+    df_consumos['Neto_Gravado_Item'] = df_consumos['Litros'] * df_consumos['Precio_Unitario_Neto']
 
-    # Cruce por Patente con Maestro
+    # Cruce con Maestro de Choferes/Repartos
     if 'PATENTE_CLEAN' in df_consumos.columns:
         df_merged = pd.merge(df_consumos, df_maestro[['REPARTO', 'PATENTE_CLEAN']].drop_duplicates(), on='PATENTE_CLEAN', how='left')
     else:
@@ -125,33 +134,47 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
 
     if not faltantes.empty:
         st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo asignado.")
-        st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Litros', 'Precio_Factura', 'Importe_Total']])
+        st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Litros', 'Precio_Unitario_Neto', 'Neto_Gravado_Item']])
     else:
-        st.success("✅ Excelente: Todos los consumos fueron calculados con los precios de Factura y asignados a su Centro de Costo.")
+        st.success("✅ Excelente: Todos los consumos fueron calculados con el Precio Unitario Neto y asignados al Centro de Costo.")
 
     # --- SECCIÓN 4: PLANTILLA FINNEGANS ---
     st.markdown("---")
-    st.subheader("📊 Vista Previa de Carga Masiva (Formato Finnegans)")
+    st.subheader("📊 Vista Previa de Carga Masiva (Ítems + Impuestos/Tasas)")
 
-    df_finnegans = pd.DataFrame()
-    df_finnegans['Número'] = [nro_interno] * len(df_merged)
-    df_finnegans['Fecha'] = [fecha_fc] * len(df_merged)
-    df_finnegans['Proveedor'] = [proveedor_cod] * len(df_merged)
-    df_finnegans['Comprobante'] = [nro_comprobante] * len(df_merged)
-    df_finnegans['Condición de Pago'] = ['CUENTA CORRIENTE 7 DÍAS'] * len(df_merged)
-    df_finnegans['Moneda'] = ['ARS'] * len(df_merged)
-    df_finnegans['Producto'] = ['COMB'] * len(df_merged)
-    df_finnegans['Cantidad'] = df_merged['Litros']
-    df_finnegans['Precio'] = df_merged['Precio_Factura']
-    df_finnegans['Dimensión'] = 'DIMCTC'
-    df_finnegans['Valor de dimensión'] = df_merged['REPARTO']
+    # Tabla de Ítems
+    df_finnegans_items = pd.DataFrame()
+    df_finnegans_items['Número'] = [nro_interno] * len(df_merged)
+    df_finnegans_items['Fecha'] = [fecha_fc] * len(df_merged)
+    df_finnegans_items['Proveedor'] = [proveedor_cod] * len(df_merged)
+    df_finnegans_items['Comprobante'] = [nro_comprobante] * len(df_merged)
+    df_finnegans_items['Condición de Pago'] = ['CUENTA CORRIENTE 7 DÍAS'] * len(df_merged)
+    df_finnegans_items['Moneda'] = ['ARS'] * len(df_merged)
+    df_finnegans_items['Producto'] = ['COMB'] * len(df_merged)
+    df_finnegans_items['Cantidad'] = df_merged['Litros']
+    df_finnegans_items['Precio'] = df_merged['Precio_Unitario_Neto']
+    df_finnegans_items['Dimensión'] = 'DIMCTC'
+    df_finnegans_items['Valor de dimensión'] = df_merged['REPARTO']
 
-    st.dataframe(df_finnegans)
+    st.write("**Detalle de Ítems (Combustible Neto):**")
+    st.dataframe(df_finnegans_items)
 
-    # --- SECCIÓN 5: DESCARGAR EXCEL ---
+    # Tabla de Impuestos / Tasas anexos
+    df_impuestos = pd.DataFrame([
+        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'ITC', 'Importe': impuestos_factura['ITC']},
+        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'Impuestos Provinciales', 'Importe': impuestos_factura['Impuestos Provinciales']},
+        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'Impuestos Municipales', 'Importe': impuestos_factura['Impuestos Municipales']},
+        {'Comprobante': nro_comprobante, 'Tipo': 'IVA', 'Tasa/Impuesto': '21%', 'Importe': impuestos_factura['IVA_21']}
+    ])
+
+    st.write("**Detalle de Impuestos y Tasas de la Factura:**")
+    st.dataframe(df_impuestos)
+
+    # --- SECCIÓN 5: DESCARGAR EXCEL CON 2 SOLAPAS ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_finnegans.to_excel(writer, index=False, sheet_name='Factura_Importar')
+        df_finnegans_items.to_excel(writer, index=False, sheet_name='Items_Factura')
+        df_impuestos.to_excel(writer, index=False, sheet_name='Impuestos_Tasas')
     
     st.download_button(
         label="📥 Descargar Excel Listo para Finnegans",
