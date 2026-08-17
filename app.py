@@ -7,7 +7,7 @@ import io
 st.set_page_config(page_title="Cargador de Facturas de Combustible", layout="wide")
 
 st.title("⛽ Importador Masivo de Facturas de Combustible para Finnegans")
-st.markdown("Herramienta de asignación de precios de Factura sobre Remitos y Centros de Costo")
+st.markdown("Herramienta de asignación de Precios Unitarios Netos y Centros de Costo")
 
 # --- SECCIÓN 1: CARGA DE ARCHIVOS ---
 st.sidebar.header("📁 Carga de Archivos")
@@ -16,12 +16,12 @@ file_maestro = st.sidebar.file_uploader("1. Maestro de Choferes (.xlsx)", type=[
 file_factura = st.sidebar.file_uploader("2. Factura A - Petroeste (.pdf)", type=["pdf"])
 file_remitos = st.sidebar.file_uploader("3. Listado de Remitos (.pdf, .xlsx, .csv)", type=["pdf", "xlsx", "csv"])
 
-# Precios Unitarios NETOS de la Factura (ejemplo Petroeste)
-precios_unitarios_factura = {
-    'DIESEL 500': 2235.00,
-    'INFINIA DIESEL': 2604.00,
-    'NAFTA SUPER': 1829.00,
-    'NAFTA INFINIA': 2072.00
+# Precios Unitarios NETOS de la Factura (Columna Amarilla "Precio Unit.")
+precios_unitarios_netos = {
+    'DIESEL 500': 1627.88,
+    'INFINIA DIESEL': 1921.82,
+    'NAFTA SUPER': 1441.45,
+    'NAFTA INFINIA': 1634.92
 }
 
 # Impuestos extraídos de la Factura Petroeste A-00098-00040851
@@ -38,7 +38,7 @@ auto_fecha = "14/08/2026"
 auto_proveedor = "30646766369"
 auto_comprobante = "A-00098-00040851"
 
-# 1. Leer Datos de Factura A
+# 1. Leer Datos y Extraer Precios Unitarios de Factura A
 if file_factura:
     reader_fc = pypdf.PdfReader(file_factura)
     txt_fc = "\n".join([page.extract_text() for page in reader_fc.pages if page.extract_text()])
@@ -54,6 +54,13 @@ if file_factura:
         
     cuit_m = re.search(r'C\.U\.I\.T\.\s*(\d{2}-\d{8}-\d{1})', txt_fc)
     if cuit_m: auto_proveedor = cuit_m.group(1).replace('-', '')
+
+    # Extraer dinámicamente precios unitarios netos si el PDF los expone
+    for fuel in ['DIESEL 500', 'INFINIA DIESEL', 'NAFTA SUPER', 'NAFTA INFINIA']:
+        pattern = re.escape(fuel) + r'.*?([\d\.]+\,\d{2})\s+[\d\.]+\,\d{4}'
+        match_p = re.search(pattern, txt_fc)
+        if match_p:
+            precios_unitarios_netos[fuel] = float(match_p.group(1).replace('.', '').replace(',', '.'))
 
 df_consumos = None
 
@@ -115,15 +122,15 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c3: proveedor_cod = st.text_input("Código Proveedor (CUIT)", auto_proveedor)
     with c4: nro_comprobante = st.text_input("N° Comprobante", auto_comprobante)
 
-    # --- SECCIÓN 3: VALIDACIÓN DE PRECIOS Y CENTROS DE COSTO ---
+    # --- SECCIÓN 3: VALIDACIÓN DE PRECIOS UNITARIOS NETOS ---
     st.markdown("---")
-    st.subheader("🔍 Validando Choferes, Precios Unitarios y Centros de Costo")
+    st.subheader("🔍 Validando Choferes, Precios Unitarios Netos y Centros de Costo")
 
-    # Precio Unitario Neto
-    df_consumos['Precio_Unitario_Neto'] = df_consumos['Artículo'].map(precios_unitarios_factura).fillna(1.0)
+    # Mapeo directo con Precios Unitarios Netos (Columna Amarilla)
+    df_consumos['Precio_Unitario_Neto'] = df_consumos['Artículo'].map(precios_unitarios_netos).fillna(1.0)
     df_consumos['Neto_Gravado_Item'] = df_consumos['Litros'] * df_consumos['Precio_Unitario_Neto']
 
-    # Cruce con Maestro de Choferes/Repartos
+    # Cruce con Maestro de Choferes
     if 'PATENTE_CLEAN' in df_consumos.columns:
         df_merged = pd.merge(df_consumos, df_maestro[['REPARTO', 'PATENTE_CLEAN']].drop_duplicates(), on='PATENTE_CLEAN', how='left')
     else:
@@ -136,13 +143,12 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo asignado.")
         st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Litros', 'Precio_Unitario_Neto', 'Neto_Gravado_Item']])
     else:
-        st.success("✅ Excelente: Todos los consumos fueron calculados con el Precio Unitario Neto y asignados al Centro de Costo.")
+        st.success("✅ Excelente: Todos los ítems fueron valuados con la columna amarilla (Precio Unit. Neto).")
 
     # --- SECCIÓN 4: PLANTILLA FINNEGANS ---
     st.markdown("---")
-    st.subheader("📊 Vista Previa de Carga Masiva (Ítems + Impuestos/Tasas)")
+    st.subheader("📊 Vista Previa de Carga Masiva (Formato Finnegans)")
 
-    # Tabla de Ítems
     df_finnegans_items = pd.DataFrame()
     df_finnegans_items['Número'] = [nro_interno] * len(df_merged)
     df_finnegans_items['Fecha'] = [fecha_fc] * len(df_merged)
@@ -156,25 +162,13 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     df_finnegans_items['Dimensión'] = 'DIMCTC'
     df_finnegans_items['Valor de dimensión'] = df_merged['REPARTO']
 
-    st.write("**Detalle de Ítems (Combustible Neto):**")
+    st.write("**Detalle de Ítems a Importar (Valores Netos Gravados):**")
     st.dataframe(df_finnegans_items)
 
-    # Tabla de Impuestos / Tasas anexos
-    df_impuestos = pd.DataFrame([
-        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'ITC', 'Importe': impuestos_factura['ITC']},
-        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'Impuestos Provinciales', 'Importe': impuestos_factura['Impuestos Provinciales']},
-        {'Comprobante': nro_comprobante, 'Tipo': 'Otras Tasas', 'Tasa/Impuesto': 'Impuestos Municipales', 'Importe': impuestos_factura['Impuestos Municipales']},
-        {'Comprobante': nro_comprobante, 'Tipo': 'IVA', 'Tasa/Impuesto': '21%', 'Importe': impuestos_factura['IVA_21']}
-    ])
-
-    st.write("**Detalle de Impuestos y Tasas de la Factura:**")
-    st.dataframe(df_impuestos)
-
-    # --- SECCIÓN 5: DESCARGAR EXCEL CON 2 SOLAPAS ---
+    # --- SECCIÓN 5: DESCARGAR EXCEL ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_finnegans_items.to_excel(writer, index=False, sheet_name='Items_Factura')
-        df_impuestos.to_excel(writer, index=False, sheet_name='Impuestos_Tasas')
     
     st.download_button(
         label="📥 Descargar Excel Listo para Finnegans",
