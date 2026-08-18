@@ -151,7 +151,7 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
 
     df_finnegans_items = pd.DataFrame()
     df_finnegans_items['Número'] = [nro_interno] * len(df_merged)
-    df_finnegans_items['Fecha'] = [fecha_fc] * len(df_merged)
+    df_finnegans_items['Fecha'] = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
     df_finnegans_items['Proveedor'] = [proveedor_cod] * len(df_merged)
     df_finnegans_items['Comprobante'] = [nro_comprobante] * len(df_merged)
     df_finnegans_items['Condición de Pago'] = ['CUENTA CORRIENTE 7 DÍAS'] * len(df_merged)
