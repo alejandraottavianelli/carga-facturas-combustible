@@ -28,7 +28,7 @@ auto_nro_int = "13393"
 auto_fecha = "14/08/2026"
 auto_proveedor = "30646766369"
 auto_comprobante = "A-00098-00040851"
-auto_condicion_pago = "CC7"
+auto_condicion_pago = "00002"
 
 # 1. Leer Datos de la Factura A
 if file_factura:
