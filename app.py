@@ -132,13 +132,21 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     st.markdown("---")
     st.subheader("📊 Vista Previa del Excel de Importación Masiva (Formato Oficial Finnegans)")
 
-    # Construcción de las 36 columnas oficiales del Exportador Masivo
+    # Conversión explícita a tipo fecha nativo de Excel
+    fecha_dt = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
+
+    # Convertir NUMERO a entero si es posible
+    try:
+        nro_int_val = int(re.sub(r'\D', '', nro_interno))
+    except ValueError:
+        nro_int_val = 1
+
     df_finnegans = pd.DataFrame({
-        'NUMERO': [nro_interno] * len(df_merged),
-        'FECHA': [fecha_fc] * len(df_merged),
-        'PROVEEDOR': [proveedor_cod] * len(df_merged),
-        'COMPROBANTE': [nro_comprobante] * len(df_merged),
-        'CONDICIONPAGO': [cond_pago] * len(df_merged),
+        'NUMERO': [nro_int_val] * len(df_merged),
+        'FECHA': [fecha_dt] * len(df_merged),
+        'PROVEEDOR': [str(proveedor_cod)] * len(df_merged),
+        'COMPROBANTE': [str(nro_comprobante)] * len(df_merged),
+        'CONDICIONPAGO': [str(cond_pago)] * len(df_merged),
         'SUCURSAL': None,
         'DESCRIPCION': 'Factura Combustibles Repartos',
         'PRODUCTO': ['COMB'] * len(df_merged),
@@ -146,11 +154,11 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         'CANTIDAD': df_merged['Litros'],
         'PRECIO': df_merged['Precio_Unitario_Neto'],
         'PRECIOSOBRE': None,
-        'MONEDA_COTIZACION': [1] * len(df_merged),
-        'COTIZACION': [1] * len(df_merged),
+        'MONEDA_COTIZACION': [1.0] * len(df_merged),
+        'COTIZACION': [1.0] * len(df_merged),
         'MONEDA': ['ARS'] * len(df_merged),
         'WORKFLOW': None,
-        'FECHACOMPROBANTE': [fecha_fc] * len(df_merged),
+        'FECHACOMPROBANTE': [fecha_dt] * len(df_merged),
         'FECHABASEVENCIMIENTO': None,
         'DESTINATARIO': None,
         'PROVINCIA_DESTINO': None,
@@ -174,9 +182,9 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
 
     st.dataframe(df_finnegans)
 
-    # --- SECCIÓN 5: DESCARGA EN FORMATO .XLS / .XLSX ---
+    # --- SECCIÓN 5: DESCARGA EN FORMATO .XLSX ---
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    with pd.ExcelWriter(output, engine='openpyxl', datetime_format='YYYY-MM-DD') as writer:
         df_finnegans.to_excel(writer, index=False, sheet_name='Sheet0')
     
     st.download_button(
