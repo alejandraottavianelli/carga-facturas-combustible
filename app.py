@@ -121,14 +121,14 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c_mon2: moneda_cotiz_val = st.text_input("MONEDA_COTIZACION", "PES")
     with c_mon3: cotizacion_val = st.number_input("COTIZACION", value=1.0)
 
-    # --- CONFIGURACIÓN DE DIMENSIONES (CENTRO DE COSTO Y BIEN DE USO) ---
+    # --- CONFIGURACIÓN DE DIMENSIONES ---
     st.markdown("---")
-    st.subheader("⚙️ Configuración de Dimensión de Bienes de Uso")
+    st.subheader("⚙️ Configuración de Dimensiones")
     col_dim1, col_dim2 = st.columns(2)
     with col_dim1:
         codigo_dim_cc = st.text_input("Código Dimensión Centro de Costo", "DIMCTC")
     with col_dim2:
-        codigo_dim_biu = st.text_input("Código Dimensión Bien de Uso", "DIMBIU")
+        codigo_dim_biu = st.text_input("Código Dimensión Bien de Uso", "DIMBU")
 
     # --- SECCIÓN 3: VALIDACIÓN Y CRUCE ---
     st.markdown("---")
