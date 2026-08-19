@@ -135,7 +135,6 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     # Conversión explícita a tipo fecha nativo de Excel
     fecha_dt = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
 
-    # Convertir NUMERO a entero si es posible
     try:
         nro_int_val = int(re.sub(r'\D', '', nro_interno))
     except ValueError:
@@ -154,7 +153,7 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         'CANTIDAD': df_merged['Litros'],
         'PRECIO': df_merged['Precio_Unitario_Neto'],
         'PRECIOSOBRE': None,
-        'MONEDA_COTIZACION': [1.0] * len(df_merged),
+        'MONEDA_COTIZACION': ['ARS'] * len(df_merged),
         'COTIZACION': [1.0] * len(df_merged),
         'MONEDA': ['ARS'] * len(df_merged),
         'WORKFLOW': None,
