@@ -27,8 +27,9 @@ precios_unitarios_netos = {
 auto_nro_int = "13393"
 auto_fecha = "14/08/2026"
 auto_proveedor = "30646766369"
-auto_comprobante = "A-00098-00040851"
+auto_comprobante = "A-0098-00040851"
 auto_condicion_pago = "00002"
+auto_workflow = "CPRA - Senderos"
 
 # 1. Leer Datos de la Factura A
 if file_factura:
@@ -36,7 +37,13 @@ if file_factura:
     txt_fc = "\n".join([page.extract_text() for page in reader_fc.pages if page.extract_text()])
     
     comp_m = re.search(r'([A-Z]-\d{4,5}-\d{8})', txt_fc)
-    if comp_m: auto_comprobante = comp_m.group(1)
+    if comp_m: 
+        raw_comp = comp_m.group(1)
+        parts = raw_comp.split('-')
+        if len(parts) == 3 and len(parts[1]) == 5 and parts[1].startswith('0'):
+            auto_comprobante = f"{parts[0]}-{parts[1][1:]}-{parts[2]}"
+        else:
+            auto_comprobante = raw_comp
         
     fecha_m = re.search(r'(\d{2}/\d{2}/\d{4})', txt_fc)
     if fecha_m: auto_fecha = fecha_m.group(1)
@@ -108,14 +115,24 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c4: nro_comprobante = st.text_input("Comprobante", auto_comprobante)
     with c5: cond_pago = st.text_input("Condición de Pago", auto_condicion_pago)
 
-    c_mon1, c_mon2, c_mon3 = st.columns(3)
+    c_wf1, c_mon1, c_mon2, c_mon3 = st.columns(4)
+    with c_wf1: workflow_val = st.text_input("WORKFLOW", auto_workflow)
     with c_mon1: moneda_val = st.text_input("MONEDA", "PES")
     with c_mon2: moneda_cotiz_val = st.text_input("MONEDA_COTIZACION", "PES")
     with c_mon3: cotizacion_val = st.number_input("COTIZACION", value=1.0)
 
+    # --- CONFIGURACIÓN DE DIMENSIONES (CENTRO DE COSTO Y BIEN DE USO) ---
+    st.markdown("---")
+    st.subheader("⚙️ Configuración de Dimensión de Bienes de Uso")
+    col_dim1, col_dim2 = st.columns(2)
+    with col_dim1:
+        codigo_dim_cc = st.text_input("Código Dimensión Centro de Costo", "DIMCTC")
+    with col_dim2:
+        codigo_dim_biu = st.text_input("Código Dimensión Bien de Uso", "DIMBIU")
+
     # --- SECCIÓN 3: VALIDACIÓN Y CRUCE ---
     st.markdown("---")
-    st.subheader("🔍 Validando Choferes, Precios Unitarios Netos y Centros de Costo")
+    st.subheader("🔍 Validando Choferes, Precios Unitarios Netos, Repartos y Patentes")
 
     df_consumos['Precio_Unitario_Neto'] = df_consumos['Artículo'].map(precios_unitarios_netos).fillna(1.0)
 
@@ -131,13 +148,12 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo asignado.")
         st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Litros', 'Precio_Unitario_Neto']])
     else:
-        st.success("✅ Excelente: Todos los consumos tienen asignado el precio unitario neto y su centro de costo.")
+        st.success("✅ Excelente: Todos los consumos se asignaron correctamente a su Centro de Costo y Bien de Uso (Patente).")
 
     # --- SECCIÓN 4: GENERACIÓN DE LA PLANTILLA ESTRUCTURADA ---
     st.markdown("---")
     st.subheader("📊 Vista Previa del Excel de Importación Masiva (Formato Oficial Finnegans)")
 
-    # Fechas nativas de Excel
     fecha_dt = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
     fecha_vto_dt = fecha_dt + pd.Timedelta(days=7)
 
@@ -162,21 +178,21 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         'MONEDA_COTIZACION': [moneda_cotiz_val.strip()] * len(df_merged),
         'COTIZACION': [cotizacion_val] * len(df_merged),
         'MONEDA': [moneda_val.strip()] * len(df_merged),
-        'WORKFLOW': None,
+        'WORKFLOW': [workflow_val.strip()] * len(df_merged),
         'FECHACOMPROBANTE': [fecha_dt] * len(df_merged),
         'FECHABASEVENCIMIENTO': [fecha_vto_dt] * len(df_merged),
         'DESTINATARIO': None,
         'PROVINCIA_DESTINO': None,
         'PROVINCIA_DESTINO_ITEM': None,
         'FECHAPROXIMOPASO': None,
-        'DIMENSION': ['DIMCTC'] * len(df_merged),
+        'DIMENSION': [codigo_dim_cc.strip()] * len(df_merged),
         'DIMENSIONVALOR': df_merged['REPARTO'],
-        'DIMENSION2': None,
-        'DIMENSIONVALOR2': None,
+        'DIMENSION2': [codigo_dim_biu.strip()] * len(df_merged),
+        'DIMENSIONVALOR2': df_merged['PATENTE_CLEAN'],
         'DIMENSION3': None,
         'DIMENSIONVALOR3': None,
-        'DIMENSIONVTO': None,
-        'DIMENSIONVALORVTO': None,
+        'DIMENSIONVTO': [codigo_dim_biu.strip()] * len(df_merged),
+        'DIMENSIONVALORVTO': df_merged['PATENTE_CLEAN'],
         'DIMENSIONVTO2': None,
         'DIMENSIONVALORVTO2': None,
         'IMPORTE_CONTROL': None,
