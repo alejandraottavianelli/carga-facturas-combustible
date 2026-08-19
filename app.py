@@ -109,7 +109,7 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c5: cond_pago = st.text_input("Condición de Pago", auto_condicion_pago)
 
     c_mon1, c_mon2, c_mon3 = st.columns(3)
-    with c_mon1: moneda_val = st.text_input("MONEDA", "ARS")
+    with c_mon1: moneda_val = st.text_input("MONEDA", "PES")
     with c_mon2: moneda_cotiz_val = st.text_input("MONEDA_COTIZACION", "PES")
     with c_mon3: cotizacion_val = st.number_input("COTIZACION", value=1.0)
 
@@ -137,7 +137,9 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     st.markdown("---")
     st.subheader("📊 Vista Previa del Excel de Importación Masiva (Formato Oficial Finnegans)")
 
+    # Fechas nativas de Excel
     fecha_dt = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
+    fecha_vto_dt = fecha_dt + pd.Timedelta(days=7)
 
     try:
         nro_int_val = int(re.sub(r'\D', '', nro_interno))
@@ -162,7 +164,7 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         'MONEDA': [moneda_val.strip()] * len(df_merged),
         'WORKFLOW': None,
         'FECHACOMPROBANTE': [fecha_dt] * len(df_merged),
-        'FECHABASEVENCIMIENTO': None,
+        'FECHABASEVENCIMIENTO': [fecha_vto_dt] * len(df_merged),
         'DESTINATARIO': None,
         'PROVINCIA_DESTINO': None,
         'PROVINCIA_DESTINO_ITEM': None,
