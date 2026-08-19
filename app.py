@@ -108,6 +108,11 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with c4: nro_comprobante = st.text_input("Comprobante", auto_comprobante)
     with c5: cond_pago = st.text_input("Condición de Pago", auto_condicion_pago)
 
+    c_mon1, c_mon2, c_mon3 = st.columns(3)
+    with c_mon1: moneda_val = st.text_input("MONEDA", "ARS")
+    with c_mon2: moneda_cotiz_val = st.text_input("MONEDA_COTIZACION", "PES")
+    with c_mon3: cotizacion_val = st.number_input("COTIZACION", value=1.0)
+
     # --- SECCIÓN 3: VALIDACIÓN Y CRUCE ---
     st.markdown("---")
     st.subheader("🔍 Validando Choferes, Precios Unitarios Netos y Centros de Costo")
@@ -132,7 +137,6 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     st.markdown("---")
     st.subheader("📊 Vista Previa del Excel de Importación Masiva (Formato Oficial Finnegans)")
 
-    # Conversión explícita a tipo fecha nativo de Excel
     fecha_dt = pd.to_datetime(fecha_fc, format='%d/%m/%Y')
 
     try:
@@ -153,9 +157,9 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         'CANTIDAD': df_merged['Litros'],
         'PRECIO': df_merged['Precio_Unitario_Neto'],
         'PRECIOSOBRE': None,
-        'MONEDA_COTIZACION': ['ARS'] * len(df_merged),
-        'COTIZACION': [1.0] * len(df_merged),
-        'MONEDA': ['ARS'] * len(df_merged),
+        'MONEDA_COTIZACION': [moneda_cotiz_val.strip()] * len(df_merged),
+        'COTIZACION': [cotizacion_val] * len(df_merged),
+        'MONEDA': [moneda_val.strip()] * len(df_merged),
         'WORKFLOW': None,
         'FECHACOMPROBANTE': [fecha_dt] * len(df_merged),
         'FECHABASEVENCIMIENTO': None,
