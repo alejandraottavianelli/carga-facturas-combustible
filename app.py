@@ -103,6 +103,9 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     df_maestro = pd.read_excel(file_maestro)
     df_maestro['PATENTE_CLEAN'] = df_maestro['PATENTE'].astype(str).str.replace(" ", "").str.upper()
 
+    # DEDUPLICAR MAESTRO POR PATENTE PARA EVITAR DUPLICAR RENGLONES DE CONSUMO
+    df_maestro_unico = df_maestro.drop_duplicates(subset=['PATENTE_CLEAN'], keep='first')
+
     if 'PATENTE' in df_consumos.columns:
         df_consumos['PATENTE_CLEAN'] = df_consumos['PATENTE'].astype(str).str.replace(" ", "").str.upper().str.rstrip('A')
 
@@ -130,14 +133,14 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
     with col_dim2:
         codigo_dim_biu = st.text_input("Código Dimensión Bien de Uso", "DIMBU")
 
-    # --- SECCIÓN 3: VALIDACIÓN Y CRUCE ---
+    # --- SECCIÓN 3: VALIDACIÓN Y CRUCE UNÍVOCO ---
     st.markdown("---")
     st.subheader("🔍 Validando Choferes, Precios Unitarios Netos, Repartos y Patentes")
 
     df_consumos['Precio_Unitario_Neto'] = df_consumos['Artículo'].map(precios_unitarios_netos).fillna(1.0)
 
     if 'PATENTE_CLEAN' in df_consumos.columns:
-        df_merged = pd.merge(df_consumos, df_maestro[['REPARTO', 'PATENTE_CLEAN']].drop_duplicates(), on='PATENTE_CLEAN', how='left')
+        df_merged = pd.merge(df_consumos, df_maestro_unico[['REPARTO', 'PATENTE_CLEAN']], on='PATENTE_CLEAN', how='left')
     else:
         df_merged = df_consumos.copy()
         df_merged['REPARTO'] = None
@@ -148,7 +151,7 @@ if file_maestro and df_consumos is not None and not df_consumos.empty:
         st.error(f"⚠️ Atención: Se encontraron {len(faltantes)} renglones sin Centro de Costo asignado.")
         st.dataframe(faltantes[['CHOFER', 'PATENTE', 'Artículo', 'Litros', 'Precio_Unitario_Neto']])
     else:
-        st.success("✅ Excelente: Todos los consumos se asignaron correctamente a su Centro de Costo y Bien de Uso (Patente).")
+        st.success(f"✅ Excelente: Se procesaron exactamente {len(df_merged)} renglones (sin duplicados) asignados a su Centro de Costo y Bien de Uso.")
 
     # --- SECCIÓN 4: GENERACIÓN DE LA PLANTILLA ESTRUCTURADA ---
     st.markdown("---")
